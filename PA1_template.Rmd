@@ -11,57 +11,32 @@ if(!file.exists(CSV_FILE)) {
   unzip(ZIP_FILE)
 }
 
-# Helper function to aggregate data using sum()
-act_agg <- function(act_data) {
-  agg_data <- aggregate(x = act_data$steps, by = list(date = act_data$date), FUN = "sum", na.rm=TRUE)
-  colnames(agg_data) <- c("date", "steps")
-  return(agg_data)
-}
-
-# Helper function to calculate the mean
-act_mean <- function(act_data) {
-  agg_data <- act_agg(act_data)
-  act_mean <- mean(x=agg_data$steps, na.rm=TRUE)
-  return(act_mean)
-}
-
-# Helper function to calculate the median
-act_median <- function(act_data) {
-  agg_data <- act_agg(act_data)
-  median(x=agg_data$steps, na.rm=TRUE)
-}
-
-# Helper function to display a histogram
-act_hist <- function(act_data) {
-  agg_data <- act_agg(act_data)
-  print(qplot(x=agg_data$steps, geom = "histogram", xlab="Total no. of steps", ylab="Frequency"))
-}
-
-```
-
-``` {r load_data}
 act_data <- read.csv(CSV_FILE)
-# Convert date column to R format
 act_data$date <- as.Date(act_data$date, "%Y-%m-%d")
+act_data_orig <- act_data
+SATURDAY <- 6
+SUNDAY <- 0
+options(scipen = 1, digits = 2)
 ```
 
 ## What is mean total number of steps taken per day?
 
 Histogram showing the total number of steps during the day:
 
-``` {r display_tot_steps}
-act_hist(act_data)
+``` {r histogram_total_steps, message=FALSE}
+agg_data_sum_day <- aggregate(x = act_data$steps, by = list(date = act_data$date), FUN = "sum", na.rm=TRUE)
+colnames(agg_data_sum_day) <- c("date", "steps")
+suppressMessages(print(qplot(x=agg_data_sum_day$steps, geom = "histogram", xlab="Total no. of steps", ylab="Frequency")))
 ```
 
-The average number of steps taken each day: `r act_mean(act_data)`
+The average number of steps taken each day: `r mean(x=agg_data_sum_day$steps, na.rm=TRUE)`
 
-The median total number of steps taken each day: `r act_median(act_data)`
+The median total number of steps taken each day: `r median(x=agg_data_sum_day$steps, na.rm=TRUE)`
 
 ## What is the average daily activity pattern?
 
 ``` {r aggregate_act_pattern}
-# Remove the "date" column, since it is not needed
-act_pattern <- act_data[,c(1,3)]
+act_pattern <- act_data[,c(1,3)] # Remove 'date' column
 act_pattern <- aggregate(x = act_data$steps, by = list(interval = act_data$interval), FUN = "mean", na.rm=TRUE)
 ```
 
@@ -78,50 +53,46 @@ The 5-min interval containing the maximum number of steps: `r act_pattern[which.
 
 Total number of rows with NA values: `r length(which(is.na(act_data))) `.
 
-Replace all missing values in the dataset (NA's) with the average number of steps taken that specific interval over all days in the dataset. I.e. let's say for a row belonging to interval 15, the recorded number of steps is {NA, 5, 10}, the NA value will be replaced by 7.5 (the mean of {5,10}).
+Replace all missing values in the dataset with the average number of steps taken that interval. I.e. let's say for a row belonging to interval 15, the recorded number of steps is {NA, 5, 10}, the NA value will be replaced by 7.5 (mean of {5,10}). The average steps for a day will be modified to always be larger than 0.
 
-``` {r inpute_missing}
-# iterate over all rows with missing values
+``` {r inpute_missing_values}
 act_data_modif <- act_data
 for(row in which(is.na(act_data_modif$steps))){
-  # get average for interval, round it and add 1 to make sure it's > 0 (probability of zero is bad!)
   gen_value <- 
     ceiling(
       mean(
         act_data[which(act_data$interval == act_data_modif[row,]$interval),]$steps, na.rm=TRUE)) + 1
-  #text <- c("inputing", gen_value)
-  #print(text)
   act_data_modif[row,]$steps <- gen_value 
 }
+act_data <- act_data_modif # replace original data, so chunk 'histogram_total_steps' can be re-used below
 ```
 
 Histogram showing the total number of steps during the day:
 
-``` {r display_tot_steps_1}
-act_hist(act_data_modif)
+``` {r histogram_totla_steps_imputed, ref.label = 'histogram_total_steps'}
 ```
 
-The average number of steps taken each day: `r act_mean(act_data_modif)`
+The average number of steps taken each day: `r mean(x=agg_data_sum_day$steps, na.rm=TRUE)`
 
-The median total number of steps taken each day: `r act_median(act_data_modif)`
+The median total number of steps taken each day: `r median(x=agg_data_sum_day$steps, na.rm=TRUE)`
 
 ## Are there differences in activity patterns between weekdays and weekends?
 
-``` {r add_weekday}
-# Add weekday to data set
-SATURDAY <- 6
-SUNDAY <- 0
-act_data_week <- aggregate(x = act_data$steps, by = list(date = act_data$date), FUN = "sum", na.rm=TRUE)
-colnames(act_data_week) <- c("date", "steps")
+``` {r add_weekday_to_act_pattern}
+act_data_week <- act_data_orig # get non-imputed data
 weekends <- which(as.POSIXlt(act_data_week$date)$wday %in% c(SATURDAY,SUNDAY))
 act_data_week["type_of_day"] <- "weekday"
 act_data_week[weekends,]$type_of_day <- "weekend"
 act_data_week$type_of_day <- factor(act_data_week$type_of_day)
-
+act_data_week <- aggregate(x = act_data_week$steps,
+                           by = list(interval = act_data_week$interval, 
+                                     type_of_day = act_data_week$type_of_day),
+                           FUN = "sum", na.rm=TRUE)
+colnames(act_data_week) <- c("interval", "type_of_day", "steps")
 ```
 
-``` {r weekday_plot}
-p <- ggplot(data=act_data_week, aes(x=date, y=steps)) + geom_line(shape=1)
+``` {r plot_weekday_pattern}
+p <- ggplot(data=act_data_week, aes(x=interval, y=steps)) + geom_line(shape=1)
 p <- p + facet_grid(type_of_day ~ .)
 print(p)
 ```
